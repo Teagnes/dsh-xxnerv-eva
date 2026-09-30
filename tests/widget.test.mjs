@@ -1,14 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import { EvaWidget } from '../src/widget.js';
 import { MAX_SCALE, MIN_SCALE, MAX_PERCENT, MIN_PERCENT, anchorPosition, resolvePosition } from '../src/prefs.js';
 import { powerReading } from '../src/view.js';
-
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 /**
  * `maxScaleAt` is the piece that keeps a resize from also moving the panel, and
@@ -331,62 +326,6 @@ test('the template points the bar at the context readout, not the sync one', () 
   assert.match(bar, /data-i18n-aria="hud\.load"/, 'labelled for assistive tech as context load');
   assert.ok(!bar.includes('hud.sync'), 'and no longer announced as the sync ratio');
   assert.match(markup, /class="bar-scale"[^>]*>.*0%.*50%.*100%/s, 'the 0/50/100% scale stays');
-});
-
-/** A collapsed pill with a fixed box, positioned against the real prototype. */
-function restoreHarness(x, y) {
-  const frame = Object.create(EvaWidget.prototype);
-  frame.disposed = false;
-  frame.position = { x, y };
-  frame.restore = { offsetWidth: 96, offsetHeight: 30, style: {} };
-  return frame;
-}
-
-test('the collapsed pill takes the frame position, not the window corner', () => {
-  withViewport(1400, 900, () => {
-    const frame = restoreHarness(716, 510);
-    EvaWidget.prototype.positionRestore.call(frame);
-    assert.equal(frame.restore.style.left, '716px');
-    assert.equal(frame.restore.style.top, '510px');
-  });
-});
-
-test('a collapsed pill stays clear of the corner whale-pet already owns', () => {
-  withViewport(1400, 900, () => {
-    // whale-pet anchors its pet to the same 24/90 corner margins (180x246 of
-    // footprint) and hardcodes its own restore pill to right:18 bottom:18.
-    const frame = restoreHarness(716, 510);
-    EvaWidget.prototype.positionRestore.call(frame);
-    const left = Number.parseFloat(frame.restore.style.left);
-    const top = Number.parseFloat(frame.restore.style.top);
-    const rightInset = 1400 - (left + 96);
-    const bottomInset = 900 - (top + 30);
-    assert.ok(rightInset >= 180 || bottomInset >= 246,
-      `pill still inside the corner whale-pet occupies: ${rightInset}px / ${bottomInset}px inset`);
-    assert.ok(rightInset > 18, 'and certainly not on the 18px pill both plugins used to share');
-  });
-});
-
-test('a collapsed pill is clamped into the viewport below the top strip', () => {
-  withViewport(1400, 900, () => {
-    const frame = restoreHarness(-40, 10);
-    EvaWidget.prototype.positionRestore.call(frame);
-    assert.equal(frame.restore.style.left, '0px');
-    assert.equal(frame.restore.style.top, '56px', 'below the reserved frame strip, so it stays clickable');
-  });
-});
-
-test('the restore pill is no longer styled onto the shared window corner', () => {
-  // Comments are dropped first: the rule's own comment quotes the two
-  // declarations it removed, and the test is about declarations, not prose.
-  const css = fs.readFileSync(path.join(root, 'src/hud.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
-  const block = css.match(/^\.restore \{[\s\S]*?\n\}/m)[0];
-  assert.match(block, /position:\s*fixed/);
-  assert.match(block, /left:\s*0/);
-  // These two are exactly what whale-pet's .restore carries; keeping them here is
-  // what put two collapsed units on one pixel.
-  assert.ok(!/right:\s*18px/.test(block), 'right: 18px collides with whale-pet');
-  assert.ok(!/bottom:\s*18px/.test(block), 'bottom: 18px collides with whale-pet');
 });
 
 test('measure remembers the last real box so a hidden frame is not re-judged', () => {

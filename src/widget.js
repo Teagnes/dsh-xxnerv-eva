@@ -311,36 +311,7 @@ export class EvaWidget {
     if (this.preferences.x !== null) anchorPosition(this.preferences, this.position);
     this.eva.style.left = `${this.position.x}px`;
     this.eva.style.top = `${this.position.y}px`;
-    this.positionRestore();
     if (!this.panel.hidden) this.positionPanel();
-  }
-
-  /**
-   * Park the collapsed pill where the frame itself sits.
-   *
-   * It used to be styled onto the window's bottom-right corner (`right: 18px;
-   * bottom: 18px`), which is not this plugin's to occupy: whale-pet parks its own
-   * restore pill on exactly those two values and anchors its pet to the same
-   * 24/90 corner margins, so two collapsed units landed on one spot. Collapsing
-   * in place sidesteps every such tenant and also keeps the pill where the user
-   * last saw the unit.
-   */
-  positionRestore() {
-    if (this.disposed) return;
-    const anchor = this.position ?? { x: 24, y: 24 };
-    const width = this.restore.offsetWidth || 96;
-    const height = this.restore.offsetHeight || 30;
-    const position = clampPosition(
-      anchor.x,
-      anchor.y,
-      width,
-      height,
-      window.innerWidth,
-      window.innerHeight,
-      this.topClearance(),
-    );
-    this.restore.style.left = `${position.x}px`;
-    this.restore.style.top = `${position.y}px`;
   }
 
   positionBubble() {

@@ -268,11 +268,12 @@ button { font: inherit; cursor: pointer; }
 
   pointer-events: auto;
   position: fixed;
-  /* Placed by `positionRestore`, not by the window corner: that corner belongs to
-     the host's chrome, and whale-pet's own restore pill carries exactly the
-     `right: 18px; bottom: 18px` this rule used to. */
-  left: 0;
-  top: 0;
+  /* Deliberately the window's bottom-right corner: that is where a collapsed
+     overlay belongs. The corner is shared with the host chrome and with other
+     overlays' own restore pills (whale-pet uses these same two values), so two
+     collapsed units can coincide. Accepted, over a pill that moves around. */
+  right: 18px;
+  bottom: 18px;
   padding: 7px 12px;
   border: .5px solid var(--hairline);
   border-radius: 99px;
