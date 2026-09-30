@@ -6,9 +6,9 @@
  * the geometry can all be exercised with a stub host, and React never
  * re-renders the panel on every token.
  */
-import { cleanPreferences, resolvePosition, anchorPosition, clampPosition, STORAGE_KEY, MIN_SCALE, MAX_SCALE } from './prefs.js';
+import { cleanPreferences, resolvePosition, anchorPosition, clampPosition, dockOf, growFromDock, STORAGE_KEY, MIN_SCALE, MAX_SCALE, MIN_PERCENT, MAX_PERCENT } from './prefs.js';
 import { normalizeLanguage, translate, bubbleLine } from './i18n.js';
-import { barFill, formatCount } from './view.js';
+import { barFill } from './view.js';
 import { readoutFontSize, segmentPlan } from './segments.js';
 
 /** Panel geometry at scale 1, matching the stylesheet. */
@@ -31,6 +31,9 @@ export class EvaWidget {
     this.bubbleStep = 0;
     this.bubbleTimer = undefined;
     this.digitCache = new Map();
+    // Which edges the frame is docked to, latched per placement; see
+    // `setScaleFromField`. Cleared whenever the user moves the frame elsewhere.
+    this.dock = undefined;
     this.storage = options.storage;
     if (options.storage === undefined && typeof window !== 'undefined') {
       try { this.storage = window.localStorage; } catch { this.storage = null; }
@@ -52,10 +55,9 @@ export class EvaWidget {
     this.bubble = this.query('.bubble');
     this.bubbleText = this.query('.bubble-message');
     this.panel = this.query('.panel');
-    this.syncDetail = this.query('.sync-detail');
     this.accountDetail = this.query('.account-detail');
     this.scale = this.query('#eva-scale');
-    this.scaleValue = this.query('.scale-value');
+    this.scaleHint = this.query('.scale-hint');
     this.motion = this.query('#eva-motion');
     this.refresh = this.query('.refresh');
     this.restore = this.query('.restore');
@@ -91,21 +93,15 @@ export class EvaWidget {
     this.listen(document, 'pointerdown', event => {
       if (!this.panel.hidden && !event.composedPath().includes(this.host)) this.closePanel(false);
     });
-    this.listen(this.scale, 'input', () => this.setScale(Number(this.scale.value) / 100));
+    // A number field commits on blur or Enter, so a half-typed value never
+    // resizes the frame mid-keystroke.
+    this.listen(this.scale, 'change', () => this.commitScaleFromField());
     this.listen(this.motion, 'change', () => {
       this.preferences.motion = this.motion.checked;
       this.applyPreferences();
       this.save();
     });
     this.listen(this.refresh, 'click', () => this.requestBalance());
-    this.listen(this.query('.reset'), 'click', () => {
-      this.preferences.x = null;
-      this.preferences.y = null;
-      this.preferences.scale = 1;
-      this.digitCache.clear();
-      this.applyPreferences();
-      this.save();
-    });
     this.listen(this.query('.hide'), 'click', () => {
       this.preferences.hidden = true;
       this.closePanel(false);
@@ -119,7 +115,11 @@ export class EvaWidget {
       this.save();
       this.greet();
     });
-    this.listen(window, 'resize', () => this.reposition());
+    this.listen(window, 'resize', () => {
+      // The gaps the dock was derived from have changed; re-derive on next use.
+      this.dock = undefined;
+      this.reposition();
+    });
     this.listen(document, 'visibilitychange', () => { this.visibility(); });
 
     this.applyPreferences();
@@ -183,10 +183,6 @@ export class EvaWidget {
         </div>
         <p class="subtitle" data-i18n="panel.subtitle"></p>
         <div class="section">
-          <h4 data-i18n="panel.detail"></h4>
-          <dl class="detail sync-detail"></dl>
-        </div>
-        <div class="section">
           <h4 data-i18n="panel.accounts"></h4>
           <dl class="detail account-detail"></dl>
         </div>
@@ -195,17 +191,20 @@ export class EvaWidget {
           <dl class="detail rows"></dl>
         </div>
         <div class="setting">
-          <label for="eva-scale"><span data-i18n="setting.scale"></span> <output class="scale-value"></output></label>
-          <input id="eva-scale" type="range" min="50" max="150" step="5" />
+          <label for="eva-scale" data-i18n="setting.scale"></label>
+          <span class="scale-field">
+            <input id="eva-scale" type="number" inputmode="numeric" min="${MIN_PERCENT}" max="${MAX_PERCENT}" step="5" aria-describedby="eva-scale-hint" />
+            <span class="scale-unit" aria-hidden="true">%</span>
+          </span>
         </div>
+        <p class="scale-hint" id="eva-scale-hint"></p>
         <div class="setting">
           <label for="eva-motion" data-i18n="setting.motion"></label>
           <input id="eva-motion" type="checkbox" role="switch" />
         </div>
         <div class="panel-actions">
+          <button class="action hide primary" type="button" data-i18n="action.hide"></button>
           <button class="action refresh" type="button" data-i18n="action.refresh"></button>
-          <button class="action reset" type="button" data-i18n="action.reset"></button>
-          <button class="action hide" type="button" data-i18n="action.hide"></button>
         </div>
         <div class="panel-version">NERV TYPE INTERFACE <span class="version"></span></div>
       </section>
@@ -233,16 +232,27 @@ export class EvaWidget {
       element.setAttribute('aria-label', translate(this.language, element.dataset.i18nAria));
     }
     if (this.versionEl !== null) this.versionEl.textContent = this.version;
+    // The bounds are data, not copy, so they are interpolated rather than baked
+    // into the dictionaries where they could drift away from the real limits.
+    if (this.scaleHint !== null) {
+      this.scaleHint.textContent = translate(this.language, 'setting.scaleHint', { min: MIN_PERCENT, max: MAX_PERCENT });
+    }
     this.paint();
     if (!this.panel.hidden) this.renderPanel();
   }
 
-  applyPreferences() {
+  /**
+   * Paint the size field from the preferences, which stay the source of truth.
+   * This is also the repair path: an unparsable keystroke leaves nothing to
+   * apply, so the field is simply put back to the size actually in force.
+   */
+  syncScaleField() {
     this.scale.value = String(Math.round(this.preferences.scale * 100));
-    this.scaleValue.textContent = `${this.scale.value}%`;
     this.scale.setAttribute('aria-valuetext', `${this.scale.value}%`);
-    const span = MAX_SCALE - MIN_SCALE;
-    this.scale.style.setProperty('--range-progress', `${span === 0 ? 0 : ((this.preferences.scale - MIN_SCALE) / span) * 100}%`);
+  }
+
+  applyPreferences() {
+    this.syncScaleField();
     this.motion.checked = this.preferences.motion;
     this.eva.dataset.motion = String(this.preferences.motion);
     this.hud.style.setProperty('--hud-scale', String(this.preferences.scale));
@@ -266,6 +276,15 @@ export class EvaWidget {
   measure() {
     const rect = this.hud.getBoundingClientRect();
     return { width: rect.width || PANEL_WIDTH, height: rect.height || PANEL_HEIGHT };
+  }
+
+  /** The frame's current on-screen box; the dock math reasons over this. */
+  frameRect() {
+    const { width, height } = this.measure();
+    const viewport = { width: window.innerWidth, height: window.innerHeight };
+    const position = this.position
+      ?? resolvePosition(this.preferences, { width, height }, viewport, this.topClearance());
+    return { x: position.x, y: position.y, width, height };
   }
 
   reposition() {
@@ -344,7 +363,10 @@ export class EvaWidget {
       startX: event.clientX,
       startY: event.clientY,
       scale: this.preferences.scale,
-      ceiling: this.maxScaleAt(this.position),
+      // The cap limits growth only. Without the floor, a frame parked with no
+      // room left would be handed a ceiling below its own size and snap down to
+      // it — a 100% frame jumped to the 20% minimum just for touching the handle.
+      ceiling: Math.max(this.preferences.scale, this.maxScaleAt(this.position)),
     };
     event.currentTarget.setPointerCapture(event.pointerId);
   }
@@ -355,20 +377,64 @@ export class EvaWidget {
   }
 
   /**
-   * Apply a new scale, anchoring the position first.
+   * Apply a size change grabbed by the corner handle.
    *
-   * Both the settings control and the corner handle go through here, because a
-   * size change without an anchor recomputes the default position from the new
-   * size and drags the panel across the window.
+   * The handle is a grab on one specific corner, so the frame keeps the top-left
+   * it had and the handle follows the pointer. `ceiling` caps the drag to what
+   * still fits below and to the right of that anchor, which is what keeps the
+   * clamp — and with it any movement — out of the gesture. The settings field
+   * has no such corner to grab and goes through {@link setScaleFromField}.
    * @param next - requested scale.
-   * @param ceiling - upper bound for this change (the corner drag caps it to
-   *   what still fits below and to the right of the current anchor).
+   * @param ceiling - upper bound for this change.
    */
   setScale(next, ceiling = MAX_SCALE) {
     anchorPosition(this.preferences, this.position);
     this.preferences.scale = Math.max(MIN_SCALE, Math.min(ceiling, MAX_SCALE, next));
+    // The frame's box just changed, so the gaps the dock was derived from are
+    // stale: re-derive it against wherever the handle left the frame.
+    this.dock = undefined;
     this.applyPreferences();
     this.save();
+  }
+
+  /**
+   * Apply a size typed into the settings field.
+   *
+   * The handle grabs one corner; the field grabs none, so it pins the edges the
+   * frame is docked to and spends the change on the free sides. That keeps the
+   * frame out of `clampPosition`, which is what used to drag it across the
+   * window on the way to the maximum and leave it there. Latching the dock for
+   * the whole placement matters: re-deriving it from the live frame lets a frame
+   * sitting mid-window flip sides between steps and hesitate.
+   */
+  setScaleFromField(next) {
+    const scale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, next));
+    if (scale === this.preferences.scale) return;
+    const viewport = { width: window.innerWidth, height: window.innerHeight };
+    const rect = this.frameRect();
+    this.dock ??= dockOf(rect, viewport);
+    const ratio = scale / this.preferences.scale;
+    const size = { width: rect.width * ratio, height: rect.height * ratio };
+    const position = growFromDock(rect, size, this.dock, viewport, this.topClearance());
+    this.preferences.x = position.x;
+    this.preferences.y = position.y;
+    this.preferences.scale = scale;
+    this.applyPreferences();
+    this.save();
+  }
+
+  /**
+   * Commit whatever is in the size field.
+   *
+   * Junk — an empty box, `abc` — leaves the preferences untouched. A value out
+   * of bounds, or carrying more precision than the field shows, applies as
+   * clamped. Either way the box is repainted from the preferences afterwards, so
+   * the control can never read differently from the frame it governs.
+   */
+  commitScaleFromField() {
+    const typed = Number(this.scale.value);
+    if (this.scale.value.trim() !== '' && Number.isFinite(typed)) this.setScaleFromField(typed / 100);
+    this.syncScaleField();
   }
 
   /**
@@ -417,6 +483,8 @@ export class EvaWidget {
     if (moved) {
       this.preferences.x = this.position.x;
       this.preferences.y = this.position.y;
+      // A drag is a fresh placement: the dock must follow where the user put it.
+      this.dock = undefined;
       this.save();
     }
     this.drag = undefined;
@@ -436,6 +504,7 @@ export class EvaWidget {
     const step = event.shiftKey ? 20 : 5;
     this.preferences.x = this.position.x + delta[0] * step;
     this.preferences.y = this.position.y + delta[1] * step;
+    this.dock = undefined;
     this.reposition();
     this.save();
   }
@@ -556,23 +625,11 @@ export class EvaWidget {
 
   renderPanel() {
     const view = this.view;
-    const syncRows = [];
     const balanceRows = [];
     const push = (target, labelKey, value) => {
       const [dt, dd] = row(translate(this.language, labelKey), value);
       target.push(dt, dd);
     };
-
-    if (view?.sync?.text !== null && view?.sync?.text !== undefined) {
-      push(syncRows, 'detail.sync', `${view.sync.text}%`);
-      push(syncRows, 'detail.cacheRead', formatCount(view.sync.tokens.cacheRead));
-      push(syncRows, 'detail.uncached', formatCount(view.sync.tokens.uncached));
-      if (view.sync.tokens.cacheWrite > 0) push(syncRows, 'detail.cacheWrite', formatCount(view.sync.tokens.cacheWrite));
-      push(syncRows, 'detail.output', formatCount(view.sync.tokens.output));
-    } else {
-      syncRows.push(note(translate(this.language, 'detail.none')));
-    }
-    this.syncDetail.replaceChildren(...syncRows);
 
     const kind = view?.balance?.kind ?? 'pending';
     if (kind === 'ready') {

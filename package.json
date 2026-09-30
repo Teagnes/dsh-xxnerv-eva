@@ -1,5 +1,5 @@
 {
-  "name": "dsh-plugin-xxnerv-eva",
+  "name": "dsh-xxnerv-eva",
   "version": "0.1.0",
   "private": true,
   "description": "EVA-style companion HUD for DeepSeek Harness: remaining balance as active time, session cache-hit share as sync ratio.",

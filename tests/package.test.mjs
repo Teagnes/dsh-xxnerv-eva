@@ -9,7 +9,7 @@ const read = relative => fs.readFileSync(path.join(root, relative), 'utf8');
 const pkg = JSON.parse(read('package.json'));
 
 test('the manifest declares a web Client half and a bundle patch', () => {
-  assert.equal(pkg.name, 'dsh-plugin-xxnerv-eva');
+  assert.equal(pkg.name, 'dsh-xxnerv-eva');
   assert.equal(pkg.type, 'module');
   assert.equal(pkg.dsh.bundle.patch, './cordis.patch.yml');
   assert.equal(pkg.dsh.client.platform, 'web');

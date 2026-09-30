@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { anchorPosition, cleanPreferences, clampPosition, resolvePosition, DEFAULT_PREFERENCES, MAX_SCALE, MIN_SCALE } from '../src/prefs.js';
+import { anchorPosition, cleanPreferences, clampPosition, dockOf, growFromDock, resolvePosition, DEFAULT_PREFERENCES, MAX_SCALE, MIN_SCALE } from '../src/prefs.js';
 import { bubbleLine, MESSAGES, normalizeLanguage, translate } from '../src/i18n.js';
 
 test('cleanPreferences clamps the scale and restores defaults for junk', () => {
@@ -116,4 +116,65 @@ test('the hover quotation is present in both languages and stays Japanese', () =
   assert.equal(quote, translate('zh', 'bubble.quote'), 'a quotation is not localised copy');
   assert.match(quote, /^[\u3040-\u30ff\u4e00-\u9faf]+$/u, 'kept in Japanese script');
   assert.ok(quote.length <= 12, 'a minimal excerpt, not a transcribed passage');
+});
+
+test('dockOf names the corner the frame is nearest', () => {
+  const viewport = { width: 1400, height: 900 };
+  // The bottom-right default, 24px and 90px off its edges.
+  assert.deepEqual(dockOf({ x: 716, y: 510, width: 660, height: 300 }, viewport), { horizontal: 'right', vertical: 'bottom' });
+  // Dragged up to the top-left.
+  assert.deepEqual(dockOf({ x: 20, y: 48, width: 660, height: 300 }, viewport), { horizontal: 'left', vertical: 'top' });
+});
+
+test('growFromDock keeps the docked edges fixed and spends the change inward', () => {
+  const viewport = { width: 1400, height: 900 };
+  const rect = { x: 716, y: 510, width: 660, height: 300 };
+  const grown = growFromDock(rect, { width: 990, height: 450 }, dockOf(rect, viewport), viewport, 48);
+  assert.equal(grown.x + 990, rect.x + rect.width, 'right edge did not move');
+  assert.equal(grown.y + 450, rect.y + rect.height, 'bottom edge did not move');
+  assert.deepEqual(grown, { x: 386, y: 360 });
+});
+
+test('growFromDock avoids the clamp that used to slide the frame left', () => {
+  const viewport = { width: 1400, height: 900 };
+  const rect = { x: 716, y: 510, width: 660, height: 300 };
+  const size = { width: 990, height: 450 };
+  // The old path froze this top-left and let clampPosition haul it back into view.
+  const frozen = resolvePosition({ x: rect.x, y: rect.y }, size, viewport, 48);
+  assert.deepEqual(frozen, { x: 410, y: 450 }, 'the top-left freeze slid 306px left and 60px up');
+  assert.equal(rect.x - frozen.x, 306, 'the jump that was reported');
+  const docked = growFromDock(rect, size, dockOf(rect, viewport), viewport, 48);
+  assert.deepEqual(docked, { x: 386, y: 360 });
+  assert.equal(docked.x + size.width, rect.x + rect.width, 'the docked edge never triggered the clamp');
+});
+
+test('a grow-then-shrink round trip lands back on the original spot', () => {
+  const viewport = { width: 1400, height: 900 };
+  const start = { x: 716, y: 510, width: 660, height: 300 };
+  const dock = dockOf(start, viewport);
+  const grown = growFromDock(start, { width: 990, height: 450 }, dock, viewport, 48);
+  const back = growFromDock({ ...grown, width: 990, height: 450 }, { width: 660, height: 300 }, dock, viewport, 48);
+  assert.deepEqual(back, { x: start.x, y: start.y });
+});
+
+test('re-deriving the dock mid-gesture flips sides, which is why it is latched', () => {
+  const viewport = { width: 1400, height: 900 };
+  // Parked mid-window the two horizontal gaps are close, so a frame grown past
+  // ~720px makes the far edge the nearer one and the rule changes its mind.
+  const mid = { x: 400, y: 300, width: 660, height: 300 };
+  const latched = dockOf(mid, viewport);
+  assert.equal(latched.horizontal, 'right');
+  const grown = growFromDock(mid, { width: 730, height: 300 }, latched, viewport, 48);
+  assert.equal(grown.x + 730, mid.x + mid.width, 'held at right, so the right edge stayed');
+  assert.equal(dockOf({ ...grown, width: 730 }, viewport).horizontal, 'left', 're-deriving would have flipped');
+});
+
+test('growFromDock still clamps rather than let the frame leave the viewport', () => {
+  const viewport = { width: 1400, height: 560 };
+  const rect = { x: 716, y: 170, width: 660, height: 300 };
+  const grown = growFromDock(rect, { width: 990, height: 450 }, dockOf(rect, viewport), viewport, 48);
+  // Pinning the bottom edge would put the top under the reserved strip, so the
+  // clamp wins: fitting whole beats holding the dock exactly.
+  assert.ok(grown.y >= 48, `expected the frame below the top strip, got ${grown.y}`);
+  assert.ok(grown.y + 450 <= 560, 'the frame stays inside the viewport');
 });

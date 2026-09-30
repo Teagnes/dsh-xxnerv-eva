@@ -3,4 +3,4 @@
 # `shell.overlay` from the browser bundle at ./client.js.
 - insert:
     - id: xxnerv-eva
-      name: dsh-plugin-xxnerv-eva
+      name: dsh-xxnerv-eva
