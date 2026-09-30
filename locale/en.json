@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "EVA Companion",
+    "description": "An EVA-style in-window companion: remaining balance as active time, current-session cache-hit share as sync ratio."
+  }
+}

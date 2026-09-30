@@ -1,0 +1,6 @@
+# Adds only this plugin's own row; it replaces no shipped DSH component.
+# The Client half is declared by package.json's `dsh.client` and loaded into
+# `shell.overlay` from the browser bundle at ./client.js.
+- insert:
+    - id: xxnerv-eva
+      name: dsh-plugin-xxnerv-eva

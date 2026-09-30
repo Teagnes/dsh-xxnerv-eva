@@ -1,0 +1,8 @@
+# Local research scratch: the extracted DSH sources and the whale-pet reference
+# checkout. Never part of the plugin package.
+.reference/
+.backups/
+
+node_modules/
+*.tgz
+.DS_Store
