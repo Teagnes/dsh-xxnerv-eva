@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import { EvaWidget } from '../src/widget.js';
 import { MAX_SCALE, MIN_SCALE, MAX_PERCENT, MIN_PERCENT, anchorPosition, resolvePosition } from '../src/prefs.js';
+import { powerReading } from '../src/view.js';
 
 /**
  * `maxScaleAt` is the piece that keeps a resize from also moving the panel, and
@@ -238,4 +239,91 @@ test('the balance block renders with no readouts element left to paint', () => {
   assert.equal(failed.length, 1);
   assert.equal(failed[0].className, 'note');
   assert.match(failed[0].textContent, /HTTP 503/);
+});
+
+/**
+ * `paint` is the only place the bar's data source lives, so the test drives the
+ * real method against a stub surface. The bar is the piece that changed hands:
+ * it used to mirror the sync ratio and now carries context occupancy.
+ */
+function paintHarness(view) {
+  const segments = Array.from({ length: 20 }, () => {
+    const values = {};
+    return { values, style: { setProperty: (name, value) => { values[name] = value; } } };
+  });
+  const frame = Object.create(EvaWidget.prototype);
+  frame.disposed = false;
+  frame.language = 'en';
+  frame.view = view;
+  frame.digitCache = new Map();
+  frame.eva = { dataset: { bubble: 'false' } };
+  frame.plate = { setAttribute() {} };
+  frame.linkState = { textContent: '' };
+  frame.syncCell = { dataset: {} };
+  frame.activeCell = { dataset: {} };
+  frame.contextBar = {
+    dataset: {},
+    setAttribute(name, value) { this[name] = value; },
+    removeAttribute(name) { delete this[name]; },
+  };
+  frame.contextSegments = segments;
+  frame.digits = { sync: null, active: null };
+  frame.panel = { hidden: true };
+  frame.renderRows = () => {};
+  EvaWidget.prototype.paint.call(frame);
+  return frame;
+}
+
+const filledSegments = frame => frame.contextSegments.filter(segment => segment.values['--fill'] === '100%').length;
+
+test('the bar under the sync readout carries context occupancy, not the sync ratio', () => {
+  const frame = paintHarness({
+    state: 'linked',
+    status: { key: 'hud.state.normal' },
+    // The readout directly above the bar says 92.7%; the bar must say something else.
+    sync: { text: '92.7', tone: 'ok', tokens: {} },
+    active: { display: '12:00', tone: 'ok' },
+    power: powerReading({ contextWindow: 1000, projectedTokens: 250 }),
+  });
+  assert.equal(filledSegments(frame), 5, '20 segments of 5% each: quarter full is five lit');
+  assert.equal(frame.contextSegments[17].values['--fill'], '0%',
+    'a sync-driven bar would have lit segment 18 here');
+  assert.equal(frame.contextBar.dataset.tone, 'ok');
+  assert.equal(frame.contextBar['aria-valuenow'], '25');
+  assert.equal(frame.contextBar['aria-valuetext'], '25%');
+});
+
+test('a nearly full context window reddens the bar', () => {
+  const frame = paintHarness({
+    state: 'linked',
+    status: { key: 'hud.state.normal' },
+    sync: { text: '92.7', tone: 'ok', tokens: {} },
+    active: { display: '12:00', tone: 'ok' },
+    power: powerReading({ contextWindow: 1000, projectedTokens: 900 }),
+  });
+  assert.equal(filledSegments(frame), 18);
+  assert.equal(frame.contextBar.dataset.tone, 'low', 'occupancy past 85% is the alerting end');
+});
+
+test('an unreported context window leaves the bar empty and unlabelled', () => {
+  const frame = paintHarness({
+    state: 'standby',
+    status: { key: 'hud.state.standby' },
+    sync: { text: '92.7', tone: 'ok', tokens: {} },
+    active: { tone: 'none' },
+    power: powerReading(undefined),
+  });
+  assert.equal(frame.contextBar.dataset.value, 'unknown');
+  assert.equal(frame.contextBar.dataset.tone, 'none');
+  assert.ok(!('aria-valuenow' in frame.contextBar), 'no fabricated reading');
+  assert.equal(frame.contextBar['aria-valuetext'], 'No session data yet');
+  assert.equal(filledSegments(frame), 0, 'and no fabricated fill');
+});
+
+test('the template points the bar at the context readout, not the sync one', () => {
+  const markup = templateMarkup();
+  const bar = markup.match(/<span class="bar"[^>]*>/)[0];
+  assert.match(bar, /data-i18n-aria="hud\.load"/, 'labelled for assistive tech as context load');
+  assert.ok(!bar.includes('hud.sync'), 'and no longer announced as the sync ratio');
+  assert.match(markup, /class="bar-scale"[^>]*>.*0%.*50%.*100%/s, 'the 0/50/100% scale stays');
 });

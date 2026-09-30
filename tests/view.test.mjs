@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { barFill, billedTotal, deriveView, formatCount, formatStamp, formatTenths, powerReading } from '../src/view.js';
+import { billedTotal, contextFill, deriveView, formatCount, formatStamp, formatTenths, powerReading } from '../src/view.js';
 
 const ready = balance => ({ status: 'ready', value: [{ currency: 'CNY', balance }], bonusWallets: [] });
 
@@ -49,12 +49,15 @@ test('deriveView keeps a missing balance from breaking the sync readout', () => 
   assert.equal(unsupported.active.tone, 'none');
 });
 
-test('barFill maps the ratio onto a 0-100 CSS width', () => {
-  assert.equal(barFill({ text: null }), 0);
-  assert.equal(barFill({ text: '0' }), 0);
-  assert.equal(barFill({ text: '87.3' }), 87.3);
-  assert.equal(barFill({ text: '100' }), 100);
-  assert.equal(barFill({ text: '<100' }), 99.99);
+test('contextFill maps context occupancy onto a 0-100 CSS width', () => {
+  // An unreported window must leave the bar empty rather than draw a guess.
+  assert.equal(contextFill(powerReading(undefined)), 0);
+  assert.equal(contextFill(powerReading({ contextWindow: 0, projectedTokens: 10 })), 0);
+  assert.equal(contextFill(powerReading({ contextWindow: 1000, projectedTokens: 0 })), 0);
+  assert.equal(contextFill(powerReading({ contextWindow: 1000, projectedTokens: 873 })), 87.3);
+  // Occupancy is capped, so an over-full window cannot overflow the bar.
+  assert.equal(contextFill(powerReading({ contextWindow: 1000, projectedTokens: 4000 })), 100);
+  assert.equal(contextFill({}), 0);
 });
 
 test('formatCount groups token counts and never prints a negative', () => {

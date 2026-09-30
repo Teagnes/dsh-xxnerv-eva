@@ -101,12 +101,17 @@ function balanceTone(balance) {
   return 'none';
 }
 
-/** Sync-bar fill as a 0–100 number for CSS, or 0 when the ratio is unknown. */
-export function barFill(sync) {
-  if (sync.text === null) return 0;
-  if (sync.text === '100') return 100;
-  const value = sync.text === '<100' ? 99.99 : Number(sync.text);
-  return Number.isFinite(value) ? Math.min(100, Math.max(0, value)) : 0;
+/**
+ * Context-bar fill as a 0–100 number for CSS, or 0 when the window is unknown.
+ *
+ * The bar under the sync readout carries this rather than a second copy of the
+ * sync ratio: the ratio is already the seven-segment readout directly above it,
+ * so the bar is the one spare surface on the panel, and context occupancy has no
+ * other home outside the settings panel.
+ */
+export function contextFill(power) {
+  if (!Number.isFinite(power?.percent)) return 0;
+  return Math.min(100, Math.max(0, power.percent));
 }
 
 /** Integers with grouped digits for the detail rows. */

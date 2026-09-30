@@ -8,7 +8,7 @@
  */
 import { cleanPreferences, resolvePosition, anchorPosition, clampPosition, dockOf, growFromDock, STORAGE_KEY, MIN_SCALE, MAX_SCALE, MIN_PERCENT, MAX_PERCENT } from './prefs.js';
 import { normalizeLanguage, translate, bubbleLine } from './i18n.js';
-import { barFill } from './view.js';
+import { contextFill, formatTenths } from './view.js';
 import { readoutFontSize, segmentPlan } from './segments.js';
 
 /** Panel geometry at scale 1, matching the stylesheet. */
@@ -65,8 +65,8 @@ export class EvaWidget {
     this.digits = { sync: this.query('[data-digits="sync"]'), active: this.query('[data-digits="active"]') };
     this.syncCell = this.query('.cell.sync');
     this.activeCell = this.query('.cell.active');
-    this.syncBar = this.query('.bar');
-    this.barSegments = [...this.root.querySelectorAll('.bar-fill > i')];
+    this.contextBar = this.query('.bar');
+    this.contextSegments = [...this.root.querySelectorAll('.bar-fill > i')];
     this.rows = this.query('.rows');
     this.versionEl = this.query('.version');
 
@@ -158,7 +158,7 @@ export class EvaWidget {
               <section class="cell readout sync" data-tone="none">
                 <span class="cap"><span class="jp" data-i18n="hud.sync"></span><span class="en">SYNC RATE</span></span>
                 <span class="digits" data-digits="sync" aria-hidden="true"></span>
-                <span class="bar" role="progressbar" data-i18n-aria="hud.sync" aria-valuemin="0" aria-valuemax="100">
+                <span class="bar" role="progressbar" data-tone="none" data-i18n-aria="hud.load" aria-valuemin="0" aria-valuemax="100">
                   <span class="bar-fill" aria-hidden="true">${'<i></i>'.repeat(20)}</span>
                 </span>
                 <span class="bar-scale" aria-hidden="true"><span>0%</span><span>50%</span><span>100%</span></span>
@@ -556,18 +556,22 @@ export class EvaWidget {
     this.activeCell.dataset.tone = view?.active?.tone ?? 'none';
 
     this.linkState.textContent = translate(this.language, state === 'offline' ? 'hud.offline' : 'hud.online');
-    const sync = view?.sync ?? { text: null };
-    const fill = barFill(sync);
-    const barKey = sync.text ?? 'unknown';
-    if (this.syncBar.dataset.value !== barKey) {
-      this.syncBar.dataset.value = barKey;
-      this.barSegments.forEach((segment, index) => {
+    // The bar below the sync readout carries context occupancy, not the sync
+    // ratio: the ratio is already the seven-segment readout directly above it.
+    const power = view?.power ?? { percent: null, text: null, tone: 'none' };
+    const fill = contextFill(power);
+    const barKey = power.text ?? 'unknown';
+    this.contextBar.dataset.tone = power.tone ?? 'none';
+    if (this.contextBar.dataset.value !== barKey) {
+      this.contextBar.dataset.value = barKey;
+      this.contextSegments.forEach((segment, index) => {
         segment.style.setProperty('--fill', `${Math.max(0, Math.min(100, (fill / 5 - index) * 100))}%`);
       });
     }
-    if (sync.text === null) this.syncBar.removeAttribute('aria-valuenow');
-    else this.syncBar.setAttribute('aria-valuenow', String(fill));
-    this.syncBar.setAttribute('aria-valuetext', sync.text === null ? translate(this.language, 'detail.none') : `${sync.text}%`);
+    if (Number.isFinite(power.percent)) this.contextBar.setAttribute('aria-valuenow', formatTenths(power.percent));
+    else this.contextBar.removeAttribute('aria-valuenow');
+    const occupancy = power.text === null || power.text === undefined ? null : power.text;
+    this.contextBar.setAttribute('aria-valuetext', occupancy ?? translate(this.language, 'detail.none'));
 
     this.renderRows(view);
     this.plate.setAttribute('aria-label', translate(this.language, 'hud.aria', {

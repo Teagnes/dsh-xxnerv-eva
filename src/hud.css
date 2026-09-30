@@ -123,7 +123,10 @@ button { font: inherit; cursor: pointer; }
 .bar-fill > i { --bar-color: #ffad08; flex: 1; min-width: 0; background: linear-gradient(90deg, var(--bar-color) var(--fill, 0%), #0f1418 var(--fill, 0%)); box-shadow: inset 0 0 0 .5px #766346; }
 .bar-fill > i:nth-child(n+7) { --bar-color: #ff9807; }
 .bar-fill > i:nth-child(n+13) { --bar-color: #ff7a05; }
-.sync[data-tone="low"] .bar-fill > i { --bar-color: #ff4427; }
+/* The bar reads context occupancy, so its tone comes from the bar itself rather
+   than from the sync cell it sits in — that cell's tone still colours the digits. */
+.bar[data-tone="mid"] .bar-fill > i { --bar-color: #ff7a05; }
+.bar[data-tone="low"] .bar-fill > i { --bar-color: #ff4427; }
 .eva[data-state="offline"] .bar-fill > i { --bar-color: var(--nerv-dim); }
 .bar[data-value="unknown"] { opacity: .5; box-shadow: none; }
 .bar-scale { position: absolute; bottom: 1px; left: 0; right: 0; display: flex; justify-content: space-between; color: #c8caca; font-size: 12px; line-height: 1; }
