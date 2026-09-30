@@ -3,6 +3,10 @@
 .reference/
 .backups/
 
+# Local verification evidence (screenshots, geometry report). Kept on disk for
+# inspection; not part of the plugin package.
+/artifacts/
+
 node_modules/
 *.tgz
 .DS_Store
