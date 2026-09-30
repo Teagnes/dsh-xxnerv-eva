@@ -17,6 +17,8 @@
 
 ![EVA 同步终端主面板](docs/eva-a.png)
 
+<sub>注：截图早于「进度条改为展示上下文占用」这次改动，图中进度条恰好与同步率读数一致。当前版本里，那条进度条展示的是上下文窗口的**使用**比例。</sub>
+
 余额位数变多时，七段数字自动缩小字号，保留全部数字与两位小数，不做 `K` / `M` 缩写、也不截断：
 
 ![长余额读数](docs/eva-a-long-balance.png)
@@ -27,28 +29,28 @@
 
 环境要求：DeepSeek Harness `^0.2.0-rc.2`（见 `package.json` 的 `engines`）；从源码构建时需要 Node.js `>= 22`。
 
-1. 打开 DSH 侧边栏的 **Plugins** 页面。
-2. 在安装输入框里填入这个包的绝对路径。从零开始的话先克隆：
+打开 DSH 侧边栏的 **Plugins** 页面，把下面任一种 spec 填进安装框；装好后**完全退出 DSH 再打开**（⌘Q，关窗口不算），机体才会出现在窗口右下角。
 
-   ```bash
-   git clone https://github.com/Teagnes/dsh-xxnerv-eva
-   ```
+| 方式 | 填入安装框 | 升级行为 |
+| --- | --- | --- |
+| **Git 仓库**（一般用户） | `https://github.com/Teagnes/dsh-xxnerv-eva` | pnpm 取一份 tarball 复制进 profile；仓库有更新需要重新安装 |
+| **本地路径**（改代码 / 开发） | 克隆后的绝对路径，如 `/path/to/dsh-xxnerv-eva` | profile 里是软链接，包内容原地生效；改完 `src/` 重建 `client.js` 即可 |
 
-   然后填入克隆下来的目录，例如：
+本地路径方式从零开始：
 
-   ```text
-   /path/to/dsh-xxnerv-eva
-   ```
+```bash
+git clone https://github.com/Teagnes/dsh-xxnerv-eva
+```
 
-3. 安装完成后，页面会显示插件行 `xxnerv-eva`；接着**完全退出 DSH 再打开**（⌘Q，关窗口不算），机体才会出现在窗口右下角。
+安装框接受四类 spec：**registry 包名、绝对路径、Git 仓库地址、tarball**。填 Git 地址时，DSH 会在 pnpm 下载前先做一次 `git ls-remote` 连通性检查（默认 5 秒超时），用的是 profile 目录下 Git 自身的配置与代理；只有网络故障或超时才中断安装，认证与传输回退仍由 pnpm 负责。
 
-卸载就在同一个页面里移除该 bundle。
+安装完成后 Plugins 页面出现 bundle **`dsh-xxnerv-eva`**（它声明的插件行 id 是 `xxnerv-eva`）。卸载就在同一个页面里移除。
 
 ### 为什么必须重启而不是刷新页面
 
 Host 在插件**激活时**把 `client.js` 的字节读进内存（`@deepseek-ai/dsh-client-modules` 的 `initialBundleSnapshot`），之后一直用内存里的字节提供服务。磁盘上的新字节只有经 HMR 的模块根目录监听才会重新进入组合，而 profile 的 `hmr` 行配置是 `root: []`（模块根目录是 opt-in），所以**改动 `client.js` 之后刷新页面不够，必须完全退出应用重开**。
 
-不需要卸载重装：本地路径安装是软链接，包内容原地生效。
+这一点只对开发路径有影响：本地路径安装是软链接，重建 `client.js` 后重开即可，不需要卸载重装。
 
 ## 使用
 
@@ -106,25 +108,28 @@ Host 在插件**激活时**把 `client.js` 的字节读进内存（`@deepseek-ai
 ## 开发
 
 ```sh
-node tools/build.mjs      # 由 src/ 生成 client.js
-node --test tests/*.test.mjs
+npm run build             # node tools/build.mjs，由 src/ 生成 client.js
+npm test                  # node --test tests/*.test.mjs
 ```
 
 `client.js` 是构建产物，必须与 `src/` 一起提交；测试会在 `src/` 比 `client.js` 新时报错。
+
+`tools/asar.mjs` 是只读的 asar 读取器，用来翻看已安装的 DSH 应用包：`list [关键词]`、`cat <内部路径>`、`extract <关键词> <输出目录>`。
 
 源码结构：
 
 | 文件 | 职责 |
 | --- | --- |
 | `src/i18n.js` | 中英文案与语言归一化 |
-| `src/prefs.js` | 本地偏好、位置解析与锚点冻结 |
+| `src/prefs.js` | 本地偏好、位置解析、贴边锚定与视口钳制 |
 | `src/usage.js` | 缓存命中率与同步率取整 |
 | `src/balance.js` | 余额的精确十进制加法与格式化 |
 | `src/segments.js` | 七段数字的掩码表与读数拆解 |
-| `src/view.js` | 纯视图模型（状态机 + 上下文占用） |
+| `src/view.js` | 纯视图模型（状态机、上下文占用、进度条填充） |
 | `src/account.js` | 余额读取通道 |
 | `src/controller.js` | DSH 订阅接线（会话、投影、连接、余额） |
-| `src/widget.js` | shadow DOM 界面，不依赖任何 DSH API |
+| `src/widget.js` | shadow DOM 界面与交互，不依赖任何 DSH API |
+| `src/hud.css` | 面板样式，构建时内联进 `client.js` |
 | `src/adapter.js` | 唯一的 DSH 契约层：注册 `shell.overlay` 条目 |
 
 ## 美术与商标
