@@ -268,8 +268,11 @@ button { font: inherit; cursor: pointer; }
 
   pointer-events: auto;
   position: fixed;
-  right: 18px;
-  bottom: 18px;
+  /* Placed by `positionRestore`, not by the window corner: that corner belongs to
+     the host's chrome, and whale-pet's own restore pill carries exactly the
+     `right: 18px; bottom: 18px` this rule used to. */
+  left: 0;
+  top: 0;
   padding: 7px 12px;
   border: .5px solid var(--hairline);
   border-radius: 99px;
